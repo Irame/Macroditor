@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -16,6 +17,8 @@ namespace Macroditor
         public ObservableCollection<Script> Scripts { get; }
 
         public RelayCommand NewScriptCommand { get; }
+
+        public RelayCommand OpenDirectroyCommand { get; }
 
         public RelayCommand ReloadScriptsCommand { get; }
 
@@ -33,6 +36,13 @@ namespace Macroditor
                     fileName = $"New Script ({i++}).cs";
                 
                 Scripts.Add(new Script(Path.Combine(ScriptPath, fileName)));
+            });
+            
+            OpenDirectroyCommand = new RelayCommand(() =>
+            {
+                if (!Directory.Exists(ScriptPath))
+                    Directory.CreateDirectory(ScriptPath);
+                Process.Start(Path.GetFullPath(ScriptPath));
             });
 
             ReloadScriptsCommand = new RelayCommand(() => LoadAllScripts(ScriptPath));
