@@ -32,10 +32,10 @@ namespace Macroditor
             
             NewScriptCommand = new RelayCommand(() =>
             {
-                string fileName = "New Script.cs";
+                string fileName = "New Script.csx";
                 int i = 1;
                 while (File.Exists(Path.Combine(Script.BasePath, fileName)))
-                    fileName = $"New Script ({i++}).cs";
+                    fileName = $"New Script ({i++}).csx";
                 
                 Scripts.Add(new Script(Path.Combine(Script.BasePath, fileName)));
             });
@@ -79,7 +79,7 @@ namespace Macroditor
             if (!File.Exists(Script.GlobalUsingsFile))
                 File.WriteAllText(Script.GlobalUsingsFile, string.Join(Environment.NewLine, _defaultGlobalUsings));
 
-            FileInfo[] files = directoryInfo.GetFiles("*.cs");
+            FileInfo[] files = directoryInfo.GetFiles("*.csx");
             Scripts.Clear();
             foreach (var file in files)
             {
@@ -107,8 +107,8 @@ namespace Macroditor
 
         public Script(string file)
         {
-            if (Path.GetExtension(file) != ".cs")
-                file += ".cs";
+            if (Path.GetExtension(file) != ".csx")
+                file += ".csx";
 
             if (!File.Exists(file))
                 File.WriteAllText(file, "InputText");

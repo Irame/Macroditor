@@ -217,7 +217,7 @@
     </ApplicationDefinition>
     <Compile Include="PropertyChangedBase.cs" />
     <Compile Include="RelayCommand.cs" />
-    <None Include="Scripts\TestScript.cs">
+    <None Include="Scripts\TestScript.csx">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <Page Include="MainWindow.xaml">
