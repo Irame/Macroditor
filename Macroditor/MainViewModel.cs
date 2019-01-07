@@ -6,11 +6,9 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
-using System.Threading.Tasks;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
-using Macroditor;
-using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Scripting;
 using Microsoft.CodeAnalysis.Scripting;
 
@@ -26,64 +24,74 @@ namespace Macroditor
 
         public RelayCommand ReloadScriptsCommand { get; }
 
+        
+        public string BasePath => "./Scripts";
+
+        public string MacroditorPath => Path.Combine(BasePath, ".Macroditor");
+        
+        public string ReferencedAssembliesFile => Path.Combine(MacroditorPath, "ReferencedAssemblies");
+
+        public string GlobalUsingsFile => Path.Combine(MacroditorPath, "GlobalUsings");
+
         public MainViewModel()
         {
             Scripts = new ObservableCollection<Script>();
             
             NewScriptCommand = new RelayCommand(() =>
             {
-                string fileName = "New Script.csx";
+                string fileName = "New Script.cs";
                 int i = 1;
-                while (File.Exists(Path.Combine(Script.BasePath, fileName)))
-                    fileName = $"New Script ({i++}).csx";
+                while (File.Exists(Path.Combine(BasePath, fileName)))
+                    fileName = $"New Script ({i++}).cs";
                 
-                Scripts.Add(new Script(Path.Combine(Script.BasePath, fileName)));
+                Scripts.Add(new Script(Path.Combine(BasePath, fileName), ReferencedAssembliesFile, GlobalUsingsFile));
             });
             
             OpenDirectroyCommand = new RelayCommand(() =>
             {
-                if (!Directory.Exists(Script.BasePath))
-                    Directory.CreateDirectory(Script.BasePath);
-                Process.Start(Path.GetFullPath(Script.BasePath));
+                if (!Directory.Exists(BasePath))
+                    Directory.CreateDirectory(BasePath);
+                Process.Start(Path.GetFullPath(BasePath));
             });
 
-            ReloadScriptsCommand = new RelayCommand(() => LoadAllScripts(Script.BasePath));
+            ReloadScriptsCommand = new RelayCommand(() => LoadAllScripts());
 
-            LoadAllScripts(Script.BasePath);
+            LoadAllScripts();
         }
 
-        private string[] _defaultReferencedAssemblies =
+        public void LoadAllScripts()
         {
-            "mscorlib",
-            "System.Core"
-        };
+            DirectoryInfo basePathInfo = new DirectoryInfo(BasePath);
+            if (!basePathInfo.Exists)
+                basePathInfo.Create();
+            
+            DirectoryInfo macroditorPathInfo = new DirectoryInfo(MacroditorPath);
+            if (!macroditorPathInfo.Exists)
+                macroditorPathInfo.Create();
 
-        
-        private string[] _defaultGlobalUsings =
-        {
-            "System",
-            "System.Collections.Generic",
-            "System.Linq",
-            "System.Text.RegularExpressions"
-        };
+            foreach (var manifestResourceName in typeof(MainViewModel).Assembly.GetManifestResourceNames())
+            {
+                Debug.WriteLine(manifestResourceName);
+            }
 
-        public void LoadAllScripts(string path)
-        {
-            DirectoryInfo directoryInfo = new DirectoryInfo(path);
-            if (!directoryInfo.Exists)
-                directoryInfo.Create();
+            WriteResourceToFile(ReferencedAssembliesFile, "Macroditor.MacroditorScripsResources.ReferencedAssembliesFile", overrideExisting: false);
+            WriteResourceToFile(GlobalUsingsFile, "Macroditor.MacroditorScripsResources.GlobalUsings", overrideExisting: false);
 
-            if (!File.Exists(Script.ReferencedAssembliesFile))
-                File.WriteAllText(Script.ReferencedAssembliesFile, string.Join(Environment.NewLine, _defaultReferencedAssemblies));
-
-            if (!File.Exists(Script.GlobalUsingsFile))
-                File.WriteAllText(Script.GlobalUsingsFile, string.Join(Environment.NewLine, _defaultGlobalUsings));
-
-            FileInfo[] files = directoryInfo.GetFiles("*.csx");
+            IEnumerable<FileInfo> files = basePathInfo.GetFiles("*.csx").Concat(basePathInfo.GetFiles("*.cs"));
             Scripts.Clear();
             foreach (var file in files)
             {
-                Scripts.Add(new Script(file.FullName));
+                Scripts.Add(new Script(file.FullName, ReferencedAssembliesFile, GlobalUsingsFile));
+            }
+        }
+
+        private void WriteResourceToFile(string path, string resource, bool overrideExisting)
+        {
+            if (overrideExisting || !File.Exists(path))
+            using (Stream stream = typeof(MainViewModel).Assembly.GetManifestResourceStream(resource))
+            using (var fileStream = File.Create(path))
+            {
+                stream.CopyTo(fileStream);
             }
         }
     }
@@ -91,42 +99,63 @@ namespace Macroditor
     public class ScriptGlobals
     {
         public string InputText { get; set; }
+        public string OutputText { get; set; }
     }
 
     class Script
     {
-        public static string BasePath = "./Scripts";
-        
-        public static string ReferencedAssembliesFile => Path.Combine(BasePath, "_ReferencedAssemblies");
-        public static string GlobalUsingsFile => Path.Combine(BasePath, "_GlobalUsings");
 
         public string Name { get; private set; }
         public string FilePath { get; private set; }
         
         public RelayCommand<TextBox> ExecuteScriptCommand { get; }
 
-        public Script(string file)
+        public Script(string file, string referencedAssembliesFile, string globalUsingsFile)
         {
-            if (Path.GetExtension(file) != ".csx")
-                file += ".csx";
-
             if (!File.Exists(file))
-                File.WriteAllText(file, "InputText");
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.AppendLine($"//css_ac freestyle");
+                foreach (var line in File.ReadLines(globalUsingsFile))
+                {
+                    sb.AppendLine($"using {line};");
+                }
+                sb.AppendLine();
+                sb.AppendLine("// for Autocomplete");
+                sb.AppendLine(@"//string InputText = """";");
+                sb.AppendLine();
+                sb.AppendLine();
+                sb.AppendLine("string OutputText = InputText;");
+
+                File.WriteAllText(file, sb.ToString());
+            }
             
             Name = Path.GetFileNameWithoutExtension(file);
             FilePath = file;
+
 
             ExecuteScriptCommand = new RelayCommand<TextBox>((textBox) =>
             {
                 try
                 {
                     var globals = new ScriptGlobals { InputText = textBox.Text };
-                    var usings = File.ReadAllLines(GlobalUsingsFile).Where(IsGoodLine);
-                    var references = File.ReadAllLines(ReferencedAssembliesFile).Where(IsGoodLine).Select(Assembly.Load);
+                    var usings = File.ReadAllLines(globalUsingsFile).Select(x => x.Trim()).Where(IsGoodLine);
+                    var references = File.ReadAllLines(referencedAssembliesFile).Select(x => x.Trim()).Where(IsGoodLine).Select(Assembly.Load);
                     var scriptOptions = ScriptOptions.Default.AddReferences(references).AddImports(usings);
-                    
-                    var result = CSharpScript.EvaluateAsync(File.ReadAllText(FilePath), globals: globals, options: scriptOptions).Result;
-                    textBox.Text = $"{result}";
+
+                    var scriptContent = File.ReadAllText(FilePath);
+                    scriptContent = Regex.Replace(scriptContent, "string InputText[^;]*;", "");
+
+                    var scriptState = CSharpScript.RunAsync(scriptContent, globals: globals, options: scriptOptions).Result;
+                    var outputText = scriptState.GetVariable("OutputText");
+                    if (outputText == null)
+                    {
+                        MessageBox.Show($"The Script ({Name}) needs to set a variable named 'OutputText'.", "OutputText not set.");
+                    }
+                    else
+                    {
+                        textBox.Text = $"{outputText.Value.ToString()}";
+                    }
                 }
                 catch (CompilationErrorException e)
                 {
